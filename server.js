@@ -1,0 +1,118 @@
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { search, SafeSearchType } from 'duck-duck-scrape';
+
+const __dirname    = path.dirname(fileURLToPath(import.meta.url));
+const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY || '';
+
+// Load .env manually (no dotenv dependency needed)
+try {
+  const env = readFileSync(path.join(__dirname, '.env'), 'utf8');
+  env.split('\n').forEach(line => {
+    line = line.trim();
+    if (!line || line.startsWith('#')) return;
+    const [key, ...val] = line.split('=');
+    if (key && !process.env[key]) process.env[key] = val.join('=').trim();
+  });
+} catch (_) { /* .env optional */ }
+
+const CEREBRAS_KEY_RESOLVED = process.env.CEREBRAS_API_KEY || CEREBRAS_KEY;
+
+const ALLOWED_MODELS = new Set(['gpt-oss-120b', 'llama3.1-8b']);
+const DEFAULT_MODEL  = 'gpt-oss-120b';
+
+const app = express();
+app.use(express.json({ limit: '4mb' }));
+app.use(express.static(__dirname));
+
+app.get('/ping', (req, res) => res.json({ ok: true }));
+
+// ── DuckDuckGo search (no API key, bundled) ──
+async function ddgSearch(query, count = 3) {
+  try {
+    const results = await search(query, {
+      safeSearch: SafeSearchType.OFF,
+    });
+
+    const hits = (results.results || []).slice(0, count).map(r => ({
+      title: r.title       || '',
+      url:   r.url         || '',
+      desc:  r.description || '',
+    }));
+
+    return { results: hits };
+  } catch (err) {
+    console.warn('DDG search error:', err.message);
+    return { results: [], error: err.message };
+  }
+}
+
+app.post('/api/chat', async (req, res) => {
+  const { messages, model, search: doSearch, think: doThink } = req.body;
+
+  if (!Array.isArray(messages) || !messages.length)
+    return res.status(400).json({ error: 'messages array required' });
+
+  if (!CEREBRAS_KEY_RESOLVED)
+    return res.status(500).json({ error: 'CEREBRAS_API_KEY not set' });
+
+  const chosenModel = ALLOWED_MODELS.has(model) ? model : DEFAULT_MODEL;
+  let sources = [];
+  let finalMessages = [...messages];
+
+  // Determine result count: think=55, search=45, default=3
+  const resultCount = doThink ? 55 : doSearch ? 45 : 3;
+  const lastUser = [...messages].reverse().find(m => m.role === 'user');
+  const query = lastUser?.content?.slice(0, 200) || '';
+  console.log(`⌕ ddg (${resultCount} results): "${query.slice(0, 80)}"`);
+  const { results, error } = await ddgSearch(query, resultCount);
+  sources = results;
+
+  if (results.length) {
+    const ctx = results.map((r, i) =>
+      `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
+    ).join('\n\n');
+    const insertAt = finalMessages.length - 1;
+    finalMessages.splice(insertAt, 0, {
+      role: 'user',
+      content: `Web search results for context:\n\n${ctx}\n\n---\nAnswer the user\'s question using the above sources where relevant. Cite inline as [1], [2] etc.`,
+    });
+  } else if (error) {
+    console.warn('Search failed:', error);
+  }
+
+  console.log(`→ model:${chosenModel} search:${!!doSearch} think:${!!doThink} sources:${sources.length} msgs:${finalMessages.length}`);
+
+  try {
+    const cr = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CEREBRAS_KEY_RESOLVED}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ model: chosenModel, messages: finalMessages, max_tokens: 4096 }),
+    });
+
+    const data = await cr.json();
+    if (!cr.ok) {
+      const msg = data?.error?.message || `HTTP ${cr.status}`;
+      console.error('✗', msg);
+      return res.status(cr.status).json({ error: msg });
+    }
+
+    const reply = data.choices?.[0]?.message?.content ?? '';
+    console.log(`✓ reply ${reply.length} chars`);
+    res.json({ reply, sources });
+  } catch (err) {
+    console.error('✗', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✓ http://localhost:${PORT}`);
+  if (!CEREBRAS_KEY_RESOLVED) console.warn('⚠  CEREBRAS_API_KEY not set');
+});
