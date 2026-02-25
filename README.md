@@ -36,6 +36,13 @@ AI chat application with web search powered by a local [SearXNG](https://docs.se
    docker compose up -d
    ```
 
+   > **Permission denied?** If you get `permission denied while trying to connect to the Docker daemon socket`, add your user to the `docker` group and log out/back in:
+   > ```bash
+   > sudo usermod -aG docker $USER
+   > newgrp docker
+   > ```
+   > Or prefix docker commands with `sudo`: `sudo docker compose up -d`
+
    SearXNG will be available at `http://localhost:8888`. The configuration in `searxng/settings.yml` disables rate limiting and enables JSON API output so the Node.js server can query it freely.
 
 5. **Start the application**
