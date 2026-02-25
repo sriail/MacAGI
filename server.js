@@ -84,7 +84,7 @@ async function searxngSearch(query, count = 3) {
 }
 
 app.post('/api/chat', async (req, res) => {
-  const { messages, model, search: doSearch, think: doThink } = req.body;
+  const { messages, model, search: doSearch, think: doThink, existingSources } = req.body;
 
   if (!Array.isArray(messages) || !messages.length)
     return res.status(400).json({ error: 'messages array required' });
@@ -96,16 +96,11 @@ app.post('/api/chat', async (req, res) => {
   let sources = [];
   let finalMessages = [...messages];
 
-  // Determine result count: think=55, search=45, default=3
-  const resultCount = doThink ? 55 : doSearch ? 45 : 3;
-  const lastUser = [...messages].reverse().find(m => m.role === 'user');
-  const query = lastUser?.content?.slice(0, 200) || '';
-  console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
-  const { results, error } = await searxngSearch(query, resultCount);
-  sources = results;
-
-  if (results.length) {
-    const ctx = results.map((r, i) =>
+  // If existingSources provided (follow-up prompt), reuse them; otherwise search
+  if (Array.isArray(existingSources) && existingSources.length) {
+    sources = existingSources;
+    console.log(`⌕ reusing ${sources.length} existing sources (follow-up detected)`);
+    const ctx = sources.map((r, i) =>
       `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
     ).join('\n\n');
     const insertAt = finalMessages.length - 1;
@@ -113,8 +108,27 @@ app.post('/api/chat', async (req, res) => {
       role: 'user',
       content: `Web search results for context:\n\n${ctx}\n\n---\nAnswer the user\'s question using the above sources where relevant. Cite inline as [1], [2] etc.`,
     });
-  } else if (error) {
-    console.warn('Search failed:', error);
+  } else {
+    // Determine result count: think=55, search=45, default=3
+    const resultCount = doThink ? 55 : doSearch ? 45 : 3;
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    const query = lastUser?.content?.slice(0, 200) || '';
+    console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
+    const { results, error } = await searxngSearch(query, resultCount);
+    sources = results;
+
+    if (results.length) {
+      const ctx = results.map((r, i) =>
+        `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
+      ).join('\n\n');
+      const insertAt = finalMessages.length - 1;
+      finalMessages.splice(insertAt, 0, {
+        role: 'user',
+        content: `Web search results for context:\n\n${ctx}\n\n---\nAnswer the user\'s question using the above sources where relevant. Cite inline as [1], [2] etc.`,
+      });
+    } else if (error) {
+      console.warn('Search failed:', error);
+    }
   }
 
   console.log(`→ model:${chosenModel} search:${!!doSearch} think:${!!doThink} sources:${sources.length} msgs:${finalMessages.length}`);

@@ -117,7 +117,13 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .thinking-section{padding:10px 14px 6px;border-bottom:1px solid var(--think-border)}
 .thinking-section:last-child{border-bottom:none;padding-bottom:12px}
 .thinking-section-label{font-size:10px;color:var(--think);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;opacity:.8}
-.thinking-section-text{font-size:12.5px;color:var(--dim);line-height:1.65;white-space:pre-wrap;font-family:'JetBrains Mono',monospace}
+.thinking-section-text{font-size:12.5px;color:var(--dim);line-height:1.65}
+.thinking-section-text p{margin:0 0 .5em}.thinking-section-text p:last-child{margin-bottom:0}
+.thinking-section-text code{font-family:'JetBrains Mono',monospace;font-size:11.5px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:4px;padding:1px 4px}
+.thinking-section-text pre{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.15);border-radius:8px;padding:8px 12px;overflow-x:auto;margin:.4em 0}
+.thinking-section-text pre code{background:none;border:none;padding:0}
+.thinking-section-text ul,.thinking-section-text ol{padding-left:1.3em;margin:.3em 0}
+.thinking-section-text h1,.thinking-section-text h2,.thinking-section-text h3{font-size:12.5px;font-weight:600;margin:.5em 0 .25em;color:var(--think)}
 
 /* ── THINKING TIMER (live during request) ── */
 .think-waiting{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--think-dim);border:1px solid var(--think-border);border-radius:12px}
@@ -148,6 +154,12 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .bubble table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:13px}
 .bubble th,.bubble td{border:1px solid var(--border);padding:6px 10px;text-align:left}
 .bubble th{background:var(--surface2);font-weight:500}
+.table-wrap{position:relative;margin:.6em 0}
+.table-wrap table{margin:0}
+.table-copy-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;background:var(--surface);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--dim);transition:color .15s,border-color .15s,background .15s;opacity:0}
+.table-wrap:hover .table-copy-btn{opacity:1}
+.table-copy-btn:hover{color:var(--teal);border-color:var(--teal);background:var(--teal-dim)}
+.table-copy-btn.copied{color:var(--teal);border-color:var(--teal)}
 
 /* ── SOURCES BUBBLE ── */
 .sources-bubble{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 15px;font-size:13px}
@@ -155,6 +167,9 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .sources-header i.link-icon{font-size:13px;color:var(--teal)}
 .sources-header i.chev{font-size:12px;margin-left:auto;color:var(--muted);transition:transform .2s}
 .sources-header i.chev.open{transform:rotate(180deg)}
+.sources-copy-btn{margin-left:6px;width:24px;height:24px;background:none;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--muted);transition:color .15s,border-color .15s,background .15s;flex-shrink:0}
+.sources-copy-btn:hover{color:var(--teal);border-color:var(--teal);background:var(--teal-dim)}
+.sources-copy-btn.copied{color:var(--teal);border-color:var(--teal)}
 .sources-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .sources-list.hidden{display:none}
 .source-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;transition:border-color .15s}
@@ -372,10 +387,16 @@ var modeCode   = false;
 var modeThink  = false;
 var thinkTimerInterval = null;
 var thinkStartTime = 0;
+var lastSources = [];
 
 // ── Mode prompts ──
 var CODE_PROMPT  = 'Important (code mode): Double-check all code for correctness before responding. Explain the functionality and intuition behind your solution. Clearly explain what key parts of the generated code do using inline comments where helpful, and provide a short summary explanation after the code block.';
 var THINK_PROMPT = 'Important (think mode): Before giving your final answer, reason through the problem step by step inside <think> tags. Structure your thinking clearly — start with a Planning section, then work through your reasoning, then give your final answer outside the <think> tags. Example format:\n<think>\n## Planning\n...\n## Reasoning\n...\n## Conclusion\n...\n</think>\n\nFinal answer here.';
+var THINK_PROMPT_LLAMA = 'Important (think mode): You MUST use this exact format — wrap ALL reasoning inside <think></think> tags, then write your final answer AFTER the closing tag. Do NOT mix reasoning and final answer. Do NOT skip the tags.\n\nFormat to follow:\n<think>\n[All your reasoning, planning, and analysis goes here only]\n</think>\n[Your final answer goes here only — no reasoning, just the answer]';
+
+function getThinkPrompt() {
+  return selectedModel === 'llama3.1-8b' ? THINK_PROMPT_LLAMA : THINK_PROMPT;
+}
 
 function toggleMode(mode) {
   if (mode === 'think')  { modeThink  = !modeThink; }
@@ -455,9 +476,9 @@ function buildThinkingBox(thinkText, thinkMs) {
   hdr.innerHTML = '<i class="ti ti-brain brain-icon"></i>'+
     '<span class="think-label">Thinking</span>'+
     (timeStr ? '<span class="think-time">'+timeStr+'</span>' : '')+
-    '<i class="ti ti-chevron-down chev open"></i>';
+    '<i class="ti ti-chevron-down chev"></i>';
   var body = document.createElement('div');
-  body.className = 'thinking-body';
+  body.className = 'thinking-body hidden';
   var sections = parseThinkingSections(thinkText);
   sections.forEach(function(s) {
     var sec = document.createElement('div');
@@ -470,12 +491,12 @@ function buildThinkingBox(thinkText, thinkMs) {
     }
     var txt = document.createElement('div');
     txt.className = 'thinking-section-text';
-    txt.textContent = s.text;
+    txt.innerHTML = DOMPurify.sanitize(marked.parse(s.text));
     sec.appendChild(txt);
     body.appendChild(sec);
   });
   var chev = hdr.querySelector('.chev');
-  var open = true;
+  var open = false;
   hdr.addEventListener('click', function() {
     open = !open;
     body.classList.toggle('hidden', !open);
@@ -533,6 +554,31 @@ function extractThinking(text) {
 }
 
 // ── Markdown render with copy buttons ──
+function makeCopyBtn(getText, cls) {
+  var btn = document.createElement('button');
+  btn.className = cls; btn.title = 'Copy';
+  btn.innerHTML = '<i class="ti ti-copy"></i>';
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var txt = getText();
+    navigator.clipboard.writeText(txt).then(function() {
+      btn.innerHTML = '<i class="ti ti-check"></i>'; btn.classList.add('copied');
+      setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; btn.classList.remove('copied'); }, 2500);
+    }).catch(function(){
+      btn.innerHTML='<i class="ti ti-x"></i>';
+      setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; }, 1500);
+    });
+  });
+  return btn;
+}
+
+function tableToText(table) {
+  var rows = Array.from(table.querySelectorAll('tr'));
+  return rows.map(function(row) {
+    return Array.from(row.querySelectorAll('th,td')).map(function(cell) { return cell.textContent.trim(); }).join('\t');
+  }).join('\n');
+}
+
 function renderMd(text) {
   var clean = DOMPurify.sanitize(marked.parse(text));
   var div = document.createElement('div');
@@ -542,20 +588,20 @@ function renderMd(text) {
     wrap.className = 'code-block-wrap';
     pre.parentNode.insertBefore(wrap, pre);
     wrap.appendChild(pre);
-    var btn = document.createElement('button');
-    btn.className = 'copy-btn'; btn.title = 'Copy code';
-    btn.innerHTML = '<i class="ti ti-copy"></i>';
-    btn.addEventListener('click', function() {
+    var btn = makeCopyBtn(function() {
       var code = pre.querySelector('code');
-      var txt  = code ? code.textContent : pre.textContent;
-      navigator.clipboard.writeText(txt).then(function() {
-        btn.innerHTML = '<i class="ti ti-check"></i>'; btn.classList.add('copied');
-        setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; btn.classList.remove('copied'); }, 1800);
-      }).catch(function(){
-        btn.innerHTML='<i class="ti ti-x"></i>';
-        setTimeout(function(){ btn.innerHTML='<i class="ti ti-copy"></i>'; }, 1500);
-      });
-    });
+      return code ? code.textContent : pre.textContent;
+    }, 'copy-btn');
+    btn.title = 'Copy code';
+    wrap.appendChild(btn);
+  });
+  div.querySelectorAll('table').forEach(function(table) {
+    var wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+    var btn = makeCopyBtn(function() { return tableToText(table); }, 'table-copy-btn');
+    btn.title = 'Copy table';
     wrap.appendChild(btn);
   });
   return div.innerHTML;
@@ -566,16 +612,33 @@ function buildSourcesBubble(sources) {
   if (!sources || !sources.length) return null;
   var box = document.createElement('div'); box.className = 'sources-bubble';
   var hdr = document.createElement('div'); hdr.className = 'sources-header';
-  hdr.innerHTML = '<i class="ti ti-link link-icon"></i><span>Sources ('+sources.length+')</span><i class="ti ti-chevron-down chev open"></i>';
-  var list = document.createElement('div'); list.className = 'sources-list';
+  hdr.innerHTML = '<i class="ti ti-link link-icon"></i><span>Sources ('+sources.length+')</span><i class="ti ti-chevron-down chev"></i>';
+  // Copy button (doesn't toggle expand)
+  var copyBtn = document.createElement('button'); copyBtn.className = 'sources-copy-btn'; copyBtn.title = 'Copy all sources';
+  copyBtn.innerHTML = '<i class="ti ti-copy"></i>';
+  copyBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var txt = sources.map(function(s, i) {
+      return '['+(i+1)+'] '+s.title+'\n'+s.url+(s.desc?'\n'+s.desc:'');
+    }).join('\n\n');
+    navigator.clipboard.writeText(txt).then(function() {
+      copyBtn.innerHTML='<i class="ti ti-check"></i>'; copyBtn.classList.add('copied');
+      setTimeout(function(){ copyBtn.innerHTML='<i class="ti ti-copy"></i>'; copyBtn.classList.remove('copied'); }, 2500);
+    }).catch(function(){
+      copyBtn.innerHTML='<i class="ti ti-x"></i>';
+      setTimeout(function(){ copyBtn.innerHTML='<i class="ti ti-copy"></i>'; }, 1500);
+    });
+  });
+  hdr.appendChild(copyBtn);
+  var list = document.createElement('div'); list.className = 'sources-list hidden';
   sources.forEach(function(s, i) {
     var item = document.createElement('div'); item.className = 'source-item';
     var domain = ''; try { domain = new URL(s.url).hostname.replace(/^www\./,''); } catch(e){ domain=s.url; }
     item.innerHTML = '<span class="source-num">['+(i+1)+']</span><div class="source-body"><div class="source-title">'+esc(s.title||domain)+'</div><a class="source-url" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url)+'</a></div>';
     list.appendChild(item);
   });
-  var chev = hdr.querySelector('.chev'); var open = true;
-  hdr.addEventListener('click', function(){ open=!open; list.classList.toggle('hidden',!open); if(chev) chev.classList.toggle('open',open); });
+  var chev = hdr.querySelector('.chev'); var open = false;
+  hdr.addEventListener('click', function(e){ if(e.target===copyBtn||copyBtn.contains(e.target)) return; open=!open; list.classList.toggle('hidden',!open); if(chev) chev.classList.toggle('open',open); });
   box.appendChild(hdr); box.appendChild(list);
   return box;
 }
@@ -609,7 +672,7 @@ function buildApiMessages() {
   var out = hist.map(function(m){ return {role:m.role,content:m.content}; });
   // Inject think + code prompts after last user message
   var injections = [];
-  if (modeThink) injections.push(THINK_PROMPT);
+  if (modeThink) injections.push(getThinkPrompt());
   if (modeCode)  injections.push(CODE_PROMPT);
   if (injections.length && out.length) {
     for (var i=out.length-1;i>=0;i--) {
@@ -635,6 +698,7 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function show(id){ document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); }); document.getElementById(id).classList.add('active'); }
 function goHome(){
   chatId=null; hist=[]; files={h:[],c:[]}; modeSearch=false; modeCode=false; modeThink=false; syncModeButtons();
+  lastSources=[];
   document.getElementById('hChips').innerHTML=''; document.getElementById('cChips').innerHTML='';
   document.getElementById('msgs').innerHTML=''; document.getElementById('hInput').value='';
   document.getElementById('hInput').style.height='auto';
@@ -674,7 +738,7 @@ function loadChat(id){
 async function startChat(){
   var ta=document.getElementById('hInput'), text=ta.value.trim();
   if(!text&&!files.h.length) return; if(busy) return;
-  chatId=uid(); hist=[];
+  chatId=uid(); hist=[]; lastSources=[];
   var fl=files.h.map(function(f){ return f.name; }).join(', ');
   var display=text+(fl?'\n\n📎 '+fl:'');
   var title=(text||fl).slice(0,54)+((text||fl).length>54?'…':'');
@@ -704,6 +768,12 @@ async function sendMsg(){
   addBubble('user',display,false,null,null,null); callAPI();
 }
 
+// ── Follow-up detection ──
+var FOLLOWUP_RE = /^\s*(can you |could you |please )?(give me (more|additional)|expand|elaborate|tell me more|more info(rmation)?|more detail(s)?|go (on|further)|continue|what else|explain (more|further|that)|build on (that|this)|say more|dig deeper|keep going|and (also|more)|more about (that|this))\b/i;
+function isFollowUp(text) {
+  return FOLLOWUP_RE.test(text.trim());
+}
+
 // ── API ──
 async function callAPI(){
   busy=true;
@@ -711,11 +781,14 @@ async function callAPI(){
   document.getElementById('cSend').disabled=true;
   addTyping();
   var t0 = Date.now();
+  // Detect follow-up: if last user message is a follow-up query, reuse previous sources
+  var lastUser = [...hist].reverse().find(function(m){ return m.role==='user'; });
+  var followUp = lastUser && isFollowUp(lastUser._display||lastUser.content) && lastSources.length > 0;
   try{
     var res=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:buildApiMessages(),model:selectedModel,search:modeSearch,think:modeThink})
+      body:JSON.stringify({messages:buildApiMessages(),model:selectedModel,search:modeSearch,think:modeThink,existingSources:followUp?lastSources:null})
     });
     var responseMs = Date.now() - t0;
     removeTyping();
@@ -725,6 +798,7 @@ async function callAPI(){
       hist.pop();
     } else {
       var sources = data.sources||[];
+      if (sources.length) lastSources = sources;
       var parsed  = extractThinking(data.reply);
       addBubble('ai', parsed.reply, false, sources, parsed.thinking, responseMs);
       hist.push({role:'assistant',content:parsed.reply,_sources:sources,_thinking:parsed.thinking,_responseMs:responseMs});
