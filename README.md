@@ -86,5 +86,5 @@ AI chat application with web search powered by a local [SearXNG](https://docs.se
 
 Configuration files are in the `searxng/` directory:
 
-- **`settings.yml`** — Main SearXNG config (enables JSON format, disables safe search, sets port 8888)
+- **`settings.yml`** — Main SearXNG config (enables JSON format, disables safe search and limiter)
 - **`limiter.toml`** — Disables bot detection and rate limiting for local use

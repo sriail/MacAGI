@@ -33,7 +33,10 @@ app.get('/ping', (req, res) => res.json({ ok: true }));
 
 app.get('/api/search-health', async (_req, res) => {
   try {
-    const resp = await fetch(`${SEARXNG_URL}/healthz`);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const resp = await fetch(`${SEARXNG_URL}/healthz`, { signal: ctrl.signal });
+    clearTimeout(timer);
     res.json({ ok: resp.ok, searxng: SEARXNG_URL });
   } catch (err) {
     res.status(503).json({ ok: false, error: err.message, searxng: SEARXNG_URL });
@@ -48,7 +51,17 @@ async function searxngSearch(query, count = 3) {
       safesearch: '0',
     });
 
-    const resp = await fetch(`${SEARXNG_URL}/search?${params}`);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const resp = await fetch(`${SEARXNG_URL}/search?${params}`, {
+      signal: ctrl.signal,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'MacAGI/1.0',
+      },
+    });
+    clearTimeout(timer);
+
     if (!resp.ok) throw new Error(`SearXNG HTTP ${resp.status}`);
     const data = await resp.json();
 
@@ -61,6 +74,11 @@ async function searxngSearch(query, count = 3) {
     return { results: hits };
   } catch (err) {
     console.warn('SearXNG search error:', err.message);
+    if (err.name === 'AbortError') {
+      console.warn('  → Request timed out. Is SearXNG running? Check: docker compose up -d');
+    } else if (err.cause?.code === 'ECONNREFUSED') {
+      console.warn(`  → Connection refused at ${SEARXNG_URL}. Start SearXNG: docker compose up -d`);
+    }
     return { results: [], error: err.message };
   }
 }
@@ -128,7 +146,19 @@ app.post('/api/chat', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`✓ http://localhost:${PORT}`);
   if (!CEREBRAS_KEY_RESOLVED) console.warn('⚠  CEREBRAS_API_KEY not set');
+
+  // Check SearXNG connectivity on startup
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const resp = await fetch(`${SEARXNG_URL}/healthz`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (resp.ok) console.log(`✓ SearXNG reachable at ${SEARXNG_URL}`);
+    else console.warn(`⚠  SearXNG returned HTTP ${resp.status} at ${SEARXNG_URL}`);
+  } catch (_) {
+    console.warn(`⚠  SearXNG not reachable at ${SEARXNG_URL} — run: docker compose up -d`);
+  }
 });

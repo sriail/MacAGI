@@ -5,8 +5,6 @@ use_default_settings: true
 
 server:
   secret_key: "macagi-local-searxng-key"
-  bind_address: "0.0.0.0"
-  port: 8888
   limiter: false
 
 search:
