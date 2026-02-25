@@ -229,6 +229,8 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .code-btn.on{border-color:#a78bfa;color:#a78bfa;background:rgba(167,139,250,.1)}
 .think-btn:hover{border-color:var(--think);color:var(--think);background:var(--think-dim)}
 .think-btn.on{border-color:var(--think);color:var(--think);background:var(--think-dim)}
+.fast-btn:hover{border-color:#fbbf24;color:#fbbf24;background:rgba(251,191,36,.08)}
+.fast-btn.on{border-color:#fbbf24;color:#fbbf24;background:rgba(251,191,36,.1)}
 
 /* ── ATTACH & SEND ── */
 .attach-btn{display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;color:var(--dim);font-family:'Roboto',sans-serif;font-size:11px;padding:5px 12px 5px 9px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;white-space:nowrap}
@@ -305,6 +307,7 @@ input[type=file]{display:none}
             </div>
             <div class="iactions">
               <button class="mode-btn think-btn" id="hThinkBtn" type="button" onclick="toggleMode('think')" title="Think mode — model reasons step by step"><i class="ti ti-brain"></i> Think</button>
+              <button class="mode-btn fast-btn" id="hFastBtn" type="button" onclick="toggleMode('fast')" title="Fast mode — quick response with 1 source"><i class="ti ti-bolt"></i> Fast</button>
               <button class="mode-btn search-btn" id="hSearchBtn" type="button" onclick="toggleMode('search')" title="Search the web"><i class="ti ti-world-search"></i> Search</button>
               <button class="mode-btn code-btn" id="hCodeBtn" type="button" onclick="toggleMode('code')" title="Code mode"><i class="ti ti-code"></i> Code</button>
               <button class="attach-btn" type="button" onclick="document.getElementById('hFile').click()"><i class="ti ti-paperclip"></i> Attach</button>
@@ -344,6 +347,7 @@ input[type=file]{display:none}
         <div style="flex:1"></div>
         <div class="iactions">
           <button class="mode-btn think-btn" id="cThinkBtn" type="button" onclick="toggleMode('think')" title="Think mode"><i class="ti ti-brain"></i> Think</button>
+          <button class="mode-btn fast-btn" id="cFastBtn" type="button" onclick="toggleMode('fast')" title="Fast mode — quick response with 1 source"><i class="ti ti-bolt"></i> Fast</button>
           <button class="mode-btn search-btn" id="cSearchBtn" type="button" onclick="toggleMode('search')" title="Search the web"><i class="ti ti-world-search"></i> Search</button>
           <button class="mode-btn code-btn" id="cCodeBtn" type="button" onclick="toggleMode('code')" title="Code mode"><i class="ti ti-code"></i> Code</button>
           <button class="attach-btn" type="button" onclick="document.getElementById('cFile').click()"><i class="ti ti-paperclip"></i> Attach</button>
@@ -385,6 +389,7 @@ var dropOpen = false;
 var modeSearch = false;
 var modeCode   = false;
 var modeThink  = false;
+var modeFast   = false;
 var thinkTimerInterval = null;
 var thinkStartTime = 0;
 var lastSources = [];
@@ -399,13 +404,15 @@ function getThinkPrompt() {
 }
 
 function toggleMode(mode) {
-  if (mode === 'think')  { modeThink  = !modeThink; }
+  if (mode === 'think')  { modeThink  = !modeThink; if (modeThink)  modeFast  = false; }
+  if (mode === 'fast')   { modeFast   = !modeFast;  if (modeFast)   modeThink = false; }
   if (mode === 'search') { modeSearch = !modeSearch; if (modeSearch) modeCode = false; }
   if (mode === 'code')   { modeCode   = !modeCode;   if (modeCode)   modeSearch = false; }
   syncModeButtons();
 }
 function syncModeButtons() {
   ['hThinkBtn','cThinkBtn'].forEach(function(id){ var b=document.getElementById(id); if(b) b.classList.toggle('on',modeThink); });
+  ['hFastBtn','cFastBtn'].forEach(function(id){ var b=document.getElementById(id); if(b) b.classList.toggle('on',modeFast); });
   ['hSearchBtn','cSearchBtn'].forEach(function(id){ var b=document.getElementById(id); if(b) b.classList.toggle('on',modeSearch); });
   ['hCodeBtn','cCodeBtn'].forEach(function(id){ var b=document.getElementById(id); if(b) b.classList.toggle('on',modeCode); });
 }
@@ -697,7 +704,7 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 // ── Views ──
 function show(id){ document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); }); document.getElementById(id).classList.add('active'); }
 function goHome(){
-  chatId=null; hist=[]; files={h:[],c:[]}; modeSearch=false; modeCode=false; modeThink=false; syncModeButtons();
+  chatId=null; hist=[]; files={h:[],c:[]}; modeSearch=false; modeCode=false; modeThink=false; modeFast=false; syncModeButtons();
   lastSources=[];
   document.getElementById('hChips').innerHTML=''; document.getElementById('cChips').innerHTML='';
   document.getElementById('msgs').innerHTML=''; document.getElementById('hInput').value='';
@@ -788,7 +795,7 @@ async function callAPI(){
     var res=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:buildApiMessages(),model:selectedModel,search:modeSearch,think:modeThink,existingSources:followUp?lastSources:null})
+      body:JSON.stringify({messages:buildApiMessages(),model:selectedModel,search:modeSearch,think:modeThink,fast:modeFast,existingSources:followUp?lastSources:null})
     });
     var responseMs = Date.now() - t0;
     removeTyping();
