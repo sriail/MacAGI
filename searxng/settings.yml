@@ -1,0 +1,24 @@
+# SearXNG settings – local instance for MacAGI
+# Docs: https://docs.searxng.org/admin/settings/index.html
+
+use_default_settings: true
+
+server:
+  secret_key: "macagi-local-searxng-key"
+  bind_address: "0.0.0.0"
+  port: 8888
+  limiter: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+
+enabled_plugins:
+  - 'Hash plugin'
+  - 'Self Information'
+  - 'Tracker URL remover'

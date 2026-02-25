@@ -2,7 +2,6 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
-import { search, SafeSearchType } from 'duck-duck-scrape';
 
 const __dirname    = path.dirname(fileURLToPath(import.meta.url));
 const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY || '';
@@ -27,24 +26,41 @@ const app = express();
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(__dirname));
 
+// ── SearXNG search (local instance, no API key needed) ──
+const SEARXNG_URL = process.env.SEARXNG_URL || 'http://localhost:8888';
+
 app.get('/ping', (req, res) => res.json({ ok: true }));
 
-// ── DuckDuckGo search (no API key, bundled) ──
-async function ddgSearch(query, count = 3) {
+app.get('/api/search-health', async (_req, res) => {
   try {
-    const results = await search(query, {
-      safeSearch: SafeSearchType.OFF,
+    const resp = await fetch(`${SEARXNG_URL}/healthz`);
+    res.json({ ok: resp.ok, searxng: SEARXNG_URL });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err.message, searxng: SEARXNG_URL });
+  }
+});
+
+async function searxngSearch(query, count = 3) {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      format: 'json',
+      safesearch: '0',
     });
 
-    const hits = (results.results || []).slice(0, count).map(r => ({
-      title: r.title       || '',
-      url:   r.url         || '',
-      desc:  r.description || '',
+    const resp = await fetch(`${SEARXNG_URL}/search?${params}`);
+    if (!resp.ok) throw new Error(`SearXNG HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    const hits = (data.results || []).slice(0, count).map(r => ({
+      title: r.title   || '',
+      url:   r.url     || '',
+      desc:  r.content || '',
     }));
 
     return { results: hits };
   } catch (err) {
-    console.warn('DDG search error:', err.message);
+    console.warn('SearXNG search error:', err.message);
     return { results: [], error: err.message };
   }
 }
@@ -66,8 +82,8 @@ app.post('/api/chat', async (req, res) => {
   const resultCount = doThink ? 55 : doSearch ? 45 : 3;
   const lastUser = [...messages].reverse().find(m => m.role === 'user');
   const query = lastUser?.content?.slice(0, 200) || '';
-  console.log(`⌕ ddg (${resultCount} results): "${query.slice(0, 80)}"`);
-  const { results, error } = await ddgSearch(query, resultCount);
+  console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
+  const { results, error } = await searxngSearch(query, resultCount);
   sources = results;
 
   if (results.length) {
