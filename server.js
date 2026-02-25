@@ -111,7 +111,7 @@ app.post('/api/chat', async (req, res) => {
   } else {
     // Determine result count: think=55, search=45, default=3
     const resultCount = doThink ? 55 : doSearch ? 45 : 3;
-    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    const lastUser = [...messages].reverse().find(m => m.role === 'user' && !m.content?.startsWith('Important ('));
     const query = lastUser?.content?.slice(0, 200) || '';
     console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
     const { results, error } = await searxngSearch(query, resultCount);
