@@ -84,7 +84,7 @@ async function searxngSearch(query, count = 3) {
 }
 
 app.post('/api/chat', async (req, res) => {
-  const { messages, model, search: doSearch, think: doThink, fast: doFast, existingSources } = req.body;
+  const { messages, model, search: doSearch, think: doThink, fast: doFast, existingSources, noSearch } = req.body;
 
   if (!Array.isArray(messages) || !messages.length)
     return res.status(400).json({ error: 'messages array required' });
@@ -96,29 +96,13 @@ app.post('/api/chat', async (req, res) => {
   let sources = [];
   let finalMessages = [...messages];
 
-  // If existingSources provided (follow-up prompt), reuse them; otherwise search
-  if (Array.isArray(existingSources) && existingSources.length) {
-    sources = existingSources;
-    console.log(`⌕ reusing ${sources.length} existing sources (follow-up detected)`);
-    const ctx = sources.map((r, i) =>
-      `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
-    ).join('\n\n');
-    const insertAt = finalMessages.length - 1;
-    finalMessages.splice(insertAt, 0, {
-      role: 'user',
-      content: `Web search results for context:\n\n${ctx}\n\n---\nUse the information from these sources to answer the user\'s question. Do not cite the sources or reference them in your response — do not say "according to the sources provided" or similar phrases. Simply use the information naturally in your answer without mentioning the sources at all.`,
-    });
-  } else {
-    // Determine result count: fast=1, think=55, search=45, default=3
-    const resultCount = doFast ? 1 : doThink ? 55 : doSearch ? 45 : 3;
-    const lastUser = [...messages].reverse().find(m => m.role === 'user' && !m.content?.startsWith('Important ('));
-    const query = lastUser?.content?.slice(0, 200) || '';
-    console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
-    const { results, error } = await searxngSearch(query, resultCount);
-    sources = results;
-
-    if (results.length) {
-      const ctx = results.map((r, i) =>
+  // noSearch=true → skip all search/context injection (e.g. simple greetings)
+  if (!noSearch) {
+    // If existingSources provided (follow-up prompt), reuse them; otherwise search
+    if (Array.isArray(existingSources) && existingSources.length) {
+      sources = existingSources;
+      console.log(`⌕ reusing ${sources.length} existing sources (follow-up detected)`);
+      const ctx = sources.map((r, i) =>
         `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
       ).join('\n\n');
       const insertAt = finalMessages.length - 1;
@@ -126,12 +110,33 @@ app.post('/api/chat', async (req, res) => {
         role: 'user',
         content: `Web search results for context:\n\n${ctx}\n\n---\nUse the information from these sources to answer the user\'s question. Do not cite the sources or reference them in your response — do not say "according to the sources provided" or similar phrases. Simply use the information naturally in your answer without mentioning the sources at all.`,
       });
-    } else if (error) {
-      console.warn('Search failed:', error);
+    } else {
+      // Determine result count: fast=1, think=55, search=45, default=3
+      const resultCount = doFast ? 1 : doThink ? 55 : doSearch ? 45 : 3;
+      const lastUser = [...messages].reverse().find(m => m.role === 'user' && !m.content?.startsWith('Important ('));
+      const query = lastUser?.content?.slice(0, 200) || '';
+      console.log(`⌕ searxng (${resultCount} results): "${query.slice(0, 80)}"`);
+      const { results, error } = await searxngSearch(query, resultCount);
+      sources = results;
+
+      if (results.length) {
+        const ctx = results.map((r, i) =>
+          `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.desc}`
+        ).join('\n\n');
+        const insertAt = finalMessages.length - 1;
+        finalMessages.splice(insertAt, 0, {
+          role: 'user',
+          content: `Web search results for context:\n\n${ctx}\n\n---\nUse the information from these sources to answer the user\'s question. Do not cite the sources or reference them in your response — do not say "according to the sources provided" or similar phrases. Simply use the information naturally in your answer without mentioning the sources at all.`,
+        });
+      } else if (error) {
+        console.warn('Search failed:', error);
+      }
     }
+  } else {
+    console.log('⌕ skipping search (noSearch=true)');
   }
 
-  console.log(`→ model:${chosenModel} search:${!!doSearch} think:${!!doThink} fast:${!!doFast} sources:${sources.length} msgs:${finalMessages.length}`);
+  console.log(`→ model:${chosenModel} search:${!!doSearch} think:${!!doThink} fast:${!!doFast} noSearch:${!!noSearch} sources:${sources.length} msgs:${finalMessages.length}`);
 
   try {
     const cr = await fetch('https://api.cerebras.ai/v1/chat/completions', {
