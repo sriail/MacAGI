@@ -10,3 +10,31 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8888/
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: macagi-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: macagi-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["ollama", "pull", "phi4-mini"]
+    restart: "no"
+
+volumes:
+  ollama-data:

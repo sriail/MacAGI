@@ -301,7 +301,7 @@ input[type=file]{display:none}
           <div class="input-footer">
             <div class="model-dropdown" id="modelDropdown">
               <button class="model-pill" id="modelPill" type="button" onclick="toggleDropdown(event)">
-                <span id="modelPillText">GPT OSS 120B</span>
+                <span id="modelPillText">Phi-4 Mini</span>
                 <i class="ti ti-chevron-down chevron"></i>
               </button>
             </div>
@@ -334,7 +334,7 @@ input[type=file]{display:none}
   <div class="chat-topbar">
     <button class="back-btn" type="button" onclick="goHome()"><i class="ti ti-arrow-left"></i></button>
     <span class="chat-title-text" id="chatTitle">New chat</span>
-    <span class="model-badge" id="chatModelBadge">GPT OSS 120B</span>
+    <span class="model-badge" id="chatModelBadge">Phi-4 Mini</span>
   </div>
   <div class="messages" id="msgs"></div>
   <div class="file-chips" id="cChips"></div>
@@ -375,8 +375,7 @@ function closeSettings(){ document.getElementById('settingsPanel').classList.rem
 
 // ── Models ──
 var MODELS = [
-  { value: 'gpt-oss-120b', label: 'GPT OSS 120B', tag: 'reasoning' },
-  { value: 'llama3.1-8b',  label: 'Llama 3.1 8B', tag: 'fast'      },
+  { value: 'phi4-mini', label: 'Phi-4 Mini', tag: 'local' },
 ];
 var MODEL_LABELS = {};
 MODELS.forEach(function(m){ MODEL_LABELS[m.value] = m.label; });
@@ -400,7 +399,7 @@ var THINK_PROMPT = 'Important (think mode): Before giving your final answer, rea
 var THINK_PROMPT_LLAMA = 'Important (think mode): You MUST use this exact format — wrap ALL reasoning inside <think></think> tags, then write your final answer AFTER the closing tag. Do NOT mix reasoning and final answer. Do NOT skip the tags.\n\nFormat to follow:\n<think>\n[All your reasoning, planning, and analysis goes here only]\n</think>\n[Your final answer goes here only — no reasoning, just the answer]';
 
 function getThinkPrompt() {
-  return selectedModel === 'llama3.1-8b' ? THINK_PROMPT_LLAMA : THINK_PROMPT;
+  return THINK_PROMPT;
 }
 
 function toggleMode(mode) {

@@ -3,8 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 
-const __dirname    = path.dirname(fileURLToPath(import.meta.url));
-const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY || '';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load .env manually (no dotenv dependency needed)
 try {
@@ -17,10 +16,10 @@ try {
   });
 } catch (_) { /* .env optional */ }
 
-const CEREBRAS_KEY_RESOLVED = process.env.CEREBRAS_API_KEY || CEREBRAS_KEY;
-
-const ALLOWED_MODELS = new Set(['gpt-oss-120b', 'llama3.1-8b']);
-const DEFAULT_MODEL  = 'gpt-oss-120b';
+const OLLAMA_URL    = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_MODEL  = 'phi4-mini';
+const ALLOWED_MODELS = new Set([OLLAMA_MODEL]);
+const DEFAULT_MODEL  = OLLAMA_MODEL;
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -89,9 +88,6 @@ app.post('/api/chat', async (req, res) => {
   if (!Array.isArray(messages) || !messages.length)
     return res.status(400).json({ error: 'messages array required' });
 
-  if (!CEREBRAS_KEY_RESOLVED)
-    return res.status(500).json({ error: 'CEREBRAS_API_KEY not set' });
-
   const chosenModel = ALLOWED_MODELS.has(model) ? model : DEFAULT_MODEL;
   let sources = [];
   let finalMessages = [...messages];
@@ -134,12 +130,9 @@ app.post('/api/chat', async (req, res) => {
   console.log(`→ model:${chosenModel} search:${!!doSearch} think:${!!doThink} fast:${!!doFast} sources:${sources.length} msgs:${finalMessages.length}`);
 
   try {
-    const cr = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+    const cr = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${CEREBRAS_KEY_RESOLVED}`,
-        'Content-Type':  'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: chosenModel, messages: finalMessages, max_tokens: 4096 }),
     });
 
@@ -162,7 +155,7 @@ app.post('/api/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`✓ http://localhost:${PORT}`);
-  if (!CEREBRAS_KEY_RESOLVED) console.warn('⚠  CEREBRAS_API_KEY not set');
+  console.log(`✓ Using local model: ${OLLAMA_MODEL} via ${OLLAMA_URL}`);
 
   // Check SearXNG connectivity on startup
   try {
