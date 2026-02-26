@@ -104,6 +104,26 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 /* ── RESPONSE TIME ── */
 .resp-time{font-size:11px;color:var(--muted);opacity:.5;margin-top:1px;padding-left:2px}
 
+/* ── RESPONSE ACTIONS (reload + nav) ── */
+.resp-actions{display:flex;align-items:center;gap:5px;margin-top:6px;padding-left:1px}
+.resp-action-btn{width:26px;height:26px;background:none;border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--dim);transition:color .15s,border-color .15s,background .15s}
+.resp-action-btn:hover{color:var(--teal);border-color:var(--teal);background:var(--teal-dim)}
+.resp-action-btn:disabled{opacity:.3;cursor:not-allowed}
+.resp-nav-group{display:none;align-items:center;gap:2px}
+.resp-nav-group.visible{display:flex}
+.resp-nav-count{font-size:11px;color:var(--muted);padding:0 3px;min-width:28px;text-align:center}
+
+/* ── STATUS INDICATOR (in typing) ── */
+.status-indicator-text{font-size:11px;color:var(--muted);margin-top:5px;min-height:16px;padding-left:2px}
+
+/* ── STATUS PANEL ("..." menu) ── */
+.chat-topbar{position:relative}
+.status-panel{display:none;position:absolute;right:10px;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;z-index:200;min-width:210px;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.status-panel.open{display:block}
+.status-panel-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-weight:600}
+.status-step-row{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--teal);padding:3px 0}
+.status-step-row i{font-size:12px;width:14px;flex-shrink:0}
+
 /* ── THINKING BOX ── */
 .thinking-box{background:var(--think-dim);border:1px solid var(--think-border);border-radius:12px;overflow:hidden}
 .thinking-header{display:flex;align-items:center;gap:7px;padding:10px 14px;cursor:pointer;user-select:none}
@@ -218,7 +238,7 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .model-opt .check.hidden{visibility:hidden}
 .tag{margin-left:auto;font-size:10px;border-radius:10px;padding:1px 7px;flex-shrink:0}
 .tag-reasoning{color:#a78bfa;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.3)}
-.tag-fast{color:#fbbf24;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25)}
+.tag-fast{color:#f472b6;background:rgba(244,114,182,.1);border:1px solid rgba(244,114,182,.25)}
 
 /* ── MODE BUTTONS ── */
 .mode-btn{display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;color:var(--dim);font-family:'Roboto',sans-serif;font-size:11px;padding:5px 11px 5px 8px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;white-space:nowrap}
@@ -229,8 +249,8 @@ body{font-family:'Roboto',sans-serif;background:var(--bg);color:var(--text);heig
 .code-btn.on{border-color:#a78bfa;color:#a78bfa;background:rgba(167,139,250,.1)}
 .think-btn:hover{border-color:var(--think);color:var(--think);background:var(--think-dim)}
 .think-btn.on{border-color:var(--think);color:var(--think);background:var(--think-dim)}
-.fast-btn:hover{border-color:#fbbf24;color:#fbbf24;background:rgba(251,191,36,.08)}
-.fast-btn.on{border-color:#fbbf24;color:#fbbf24;background:rgba(251,191,36,.1)}
+.fast-btn:hover{border-color:#f472b6;color:#f472b6;background:rgba(244,114,182,.08)}
+.fast-btn.on{border-color:#f472b6;color:#f472b6;background:rgba(244,114,182,.1)}
 
 /* ── ATTACH & SEND ── */
 .attach-btn{display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;color:var(--dim);font-family:'Roboto',sans-serif;font-size:11px;padding:5px 12px 5px 9px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;white-space:nowrap}
@@ -335,6 +355,8 @@ input[type=file]{display:none}
     <button class="back-btn" type="button" onclick="goHome()"><i class="ti ti-arrow-left"></i></button>
     <span class="chat-title-text" id="chatTitle">New chat</span>
     <span class="model-badge" id="chatModelBadge">GPT OSS 120B</span>
+    <button class="icon-btn" id="statusBtn" type="button" onclick="toggleStatusPanel(event)" title="Activity log" style="display:none"><i class="ti ti-dots"></i></button>
+    <div class="status-panel" id="statusPanel"></div>
   </div>
   <div class="messages" id="msgs"></div>
   <div class="file-chips" id="cChips"></div>
@@ -393,6 +415,12 @@ var modeFast   = false;
 var thinkTimerInterval = null;
 var thinkStartTime = 0;
 var lastSources = [];
+// ── Turn / version tracking ──
+var turnData = {};       // turnId -> {messages, modeSearch, modeThink, modeFast, modeCode, existingSources, noSearch, followUp, wrap}
+var turnVersions = {};   // turnId -> [{reply, sources, thinking, responseMs}]
+var turnCurrentIdx = {}; // turnId -> current index
+var lastStatusLog = [];  // status steps from last response
+var statusAdvancer = null; // interval for cycling status steps
 
 // ── Mode prompts ──
 var CODE_PROMPT  = 'Important (code mode): Double-check all code for correctness before responding. Explain the functionality and intuition behind your solution. Clearly explain what key parts of the generated code do using inline comments where helpful, and provide a short summary explanation after the code block.';
@@ -401,6 +429,23 @@ var THINK_PROMPT_LLAMA = 'Important (think mode): You MUST use this exact format
 
 function getThinkPrompt() {
   return selectedModel === 'llama3.1-8b' ? THINK_PROMPT_LLAMA : THINK_PROMPT;
+}
+
+// ── Simple greeting / casual chat detection (skips search) ──
+// Matches short, non-informational messages: greetings, acknowledgments, simple yes/no, farewells, reactions.
+var SIMPLE_GREETING_RE = /^\s*(hi+|hey+|hello+|howdy|sup|what'?s\s*up|good\s*(morning|afternoon|evening|night)|greetings|yo+|hiya|hi there|hello there|hey there|thanks?|thank you|ok|okay|cool|nice|great|awesome|got it|sure|sounds good|nope?|yes|yep|yeah|nah|bye|goodbye|see you|lol|haha|hehe|:\)|:D|<3)\s*[!?.]*\s*$/i;
+function isSimpleGreeting(text) { return SIMPLE_GREETING_RE.test(text.trim()); }
+
+// ── Status step sequences by mode ──
+function getStatusSteps(simple, followUp, isThink, isSearch, isFast, isCode) {
+  if (simple)   return ['Processing your message…', 'Generating response…'];
+  if (followUp) return ['Using previous context…', 'Expanding on previous results…', 'Generating response…'];
+  if (isFast)   return ['Quick search…', 'Generating response…'];
+  if (isThink && isSearch) return ['Analyzing your message…', 'Performing deep web search…', 'Processing search results…', 'Planning reasoning approach…', 'Working through the problem…', 'Formulating detailed response…'];
+  if (isThink)  return ['Analyzing your message…', 'Searching for information…', 'Planning approach…', 'Reasoning through the problem…', 'Formulating response…'];
+  if (isSearch) return ['Analyzing your message…', 'Performing web search…', 'Processing search results…', 'Synthesizing information…', 'Generating response…'];
+  if (isCode)   return ['Analyzing code problem…', 'Searching for examples…', 'Planning solution…', 'Writing code…', 'Reviewing code for correctness…', 'Generating response…'];
+  return ['Analyzing your message…', 'Searching for information…', 'Prompting LLM…', 'Generating response…'];
 }
 
 function toggleMode(mode) {
@@ -520,10 +565,11 @@ function formatDuration(ms) {
 }
 
 // ── Typing / thinking indicators ──
-function addTyping() {
+function addTyping(steps) {
   var wrap = document.getElementById('msgs');
   var row = document.createElement('div');
   row.className = 'message ai'; row.id = 'typing';
+  var firstStep = steps && steps.length ? steps[0] : '';
   if (modeThink) {
     thinkStartTime = Date.now();
     row.innerHTML =
@@ -534,6 +580,7 @@ function addTyping() {
           '<span class="think-waiting-label">Thinking for</span>'+
           '<span class="think-waiting-time" id="thinkTimerDisplay">0s</span>'+
         '</div>'+
+        (firstStep ? '<div class="status-indicator-text" id="statusCurrentStep">'+esc(firstStep)+'</div>' : '')+
       '</div>';
     thinkTimerInterval = setInterval(function() {
       var el = document.getElementById('thinkTimerDisplay');
@@ -541,12 +588,27 @@ function addTyping() {
     }, 100);
   } else {
     row.innerHTML = '<div class="avatar ai"><i class="ti ti-bolt"></i></div>'+
-      '<div class="bubble tdots"><span></span><span></span><span></span></div>';
+      '<div class="ai-msg-wrap">'+
+        '<div class="bubble tdots"><span></span><span></span><span></span></div>'+
+        (firstStep ? '<div class="status-indicator-text" id="statusCurrentStep">'+esc(firstStep)+'</div>' : '')+
+      '</div>';
   }
   wrap.appendChild(row); wrap.scrollTop = wrap.scrollHeight;
+  // Cycle through status steps
+  if (steps && steps.length > 1) {
+    var stepIdx = 0;
+    statusAdvancer = setInterval(function() {
+      if (stepIdx < steps.length - 1) {
+        stepIdx++;
+        var el = document.getElementById('statusCurrentStep');
+        if (el) el.textContent = steps[stepIdx];
+      }
+    }, 1600);
+  }
 }
 function removeTyping() {
   if (thinkTimerInterval) { clearInterval(thinkTimerInterval); thinkTimerInterval = null; }
+  if (statusAdvancer) { clearInterval(statusAdvancer); statusAdvancer = null; }
   var t = document.getElementById('typing'); if (t) t.remove();
 }
 
@@ -706,6 +768,9 @@ function show(id){ document.querySelectorAll('.view').forEach(function(v){ v.cla
 function goHome(){
   chatId=null; hist=[]; files={h:[],c:[]}; modeSearch=false; modeCode=false; modeThink=false; modeFast=false; syncModeButtons();
   lastSources=[];
+  turnData={}; turnVersions={}; turnCurrentIdx={}; lastStatusLog=[];
+  var sb=document.getElementById('statusBtn'); if(sb) sb.style.display='none';
+  var sp=document.getElementById('statusPanel'); if(sp) sp.classList.remove('open');
   document.getElementById('hChips').innerHTML=''; document.getElementById('cChips').innerHTML='';
   document.getElementById('msgs').innerHTML=''; document.getElementById('hInput').value='';
   document.getElementById('hInput').style.height='auto';
@@ -733,8 +798,8 @@ function loadChat(id){
   document.getElementById('msgs').innerHTML='';
   document.getElementById('chatTitle').textContent=c.title;
   hist.forEach(function(m){
-    if(m.role==='user') addBubble('user', m._display||m.content, false, null, null, null);
-    else addBubble('ai', m.content, false, m._sources||null, m._thinking||null, m._responseMs||null);
+    if(m.role==='user') addBubble('user', m._display||m.content, false, null, null, null, null);
+    else addBubble('ai', m.content, false, m._sources||null, m._thinking||null, m._responseMs||null, null);
   });
   show('chat');
   var msgs=document.getElementById('msgs'); msgs.scrollTop=msgs.scrollHeight;
@@ -757,7 +822,7 @@ async function startChat(){
   document.getElementById('msgs').innerHTML=''; document.getElementById('cChips').innerHTML=''; files.c=[];
   hist.push({role:'user',content:content,_display:display});
   upsert(chatId,title,hist,selectedModel); show('chat');
-  addBubble('user',display,false,null,null,null); callAPI();
+  addBubble('user',display,false,null,null,null,null); callAPI(null);
 }
 
 // ── Send ──
@@ -772,7 +837,7 @@ async function sendMsg(){
   var ex=getChat(chatId), title=ex?ex.title:((text||fl).slice(0,54)+((text||fl).length>54?'…':''));
   upsert(chatId,title,hist,selectedModel);
   ta.value=''; ta.style.height='auto'; files.c=[]; document.getElementById('cChips').innerHTML='';
-  addBubble('user',display,false,null,null,null); callAPI();
+  addBubble('user',display,false,null,null,null,null); callAPI(null);
 }
 
 // ── Follow-up detection ──
@@ -782,40 +847,73 @@ function isFollowUp(text) {
 }
 
 // ── API ──
-async function callAPI(){
+async function callAPI(reloadTurnId){
   busy=true;
   document.getElementById('hSend').disabled=true;
   document.getElementById('cSend').disabled=true;
-  addTyping();
-  var t0 = Date.now();
-  // Detect follow-up: if last user message is a follow-up query, reuse previous sources
+  // Determine call context
   var lastUser = [...hist].reverse().find(function(m){ return m.role==='user'; });
-  var followUp = lastUser && isFollowUp(lastUser._display||lastUser.content) && lastSources.length > 0;
+  var userText = lastUser ? (lastUser._display||lastUser.content||'') : '';
+  var followUp = !reloadTurnId && !!lastUser && isFollowUp(userText) && lastSources.length > 0;
+  var simpleChat = !reloadTurnId && isSimpleGreeting(userText);
+  var thisTurnId, apiMessages, doSearch, doThink, doFast, doCode, existingSrcs, noSearch;
+  if (reloadTurnId && turnData[reloadTurnId]) {
+    var td = turnData[reloadTurnId];
+    thisTurnId = reloadTurnId;
+    apiMessages = td.messages; doSearch = td.modeSearch; doThink = td.modeThink;
+    doFast = td.modeFast; doCode = td.modeCode; existingSrcs = td.existingSources; noSearch = td.noSearch;
+  } else {
+    thisTurnId = uid();
+    apiMessages = buildApiMessages(); doSearch = modeSearch; doThink = modeThink;
+    doFast = modeFast; doCode = modeCode; existingSrcs = followUp ? lastSources : null; noSearch = simpleChat;
+    turnData[thisTurnId] = {messages:apiMessages,modeSearch:doSearch,modeThink:doThink,modeFast:doFast,modeCode:doCode,existingSources:existingSrcs,noSearch:noSearch,followUp:followUp,wrap:null};
+    turnVersions[thisTurnId] = []; turnCurrentIdx[thisTurnId] = -1;
+  }
+  var steps = getStatusSteps(noSearch, followUp, doThink, doSearch, doFast, doCode);
+  // For reload, use the thinking mode from stored turn data to decide typing style
+  var savedModeThink = modeThink;
+  if (reloadTurnId && turnData[reloadTurnId]) modeThink = turnData[reloadTurnId].modeThink;
+  addTyping(steps);
+  modeThink = savedModeThink;
+  var t0 = Date.now();
   try{
     var res=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:buildApiMessages(),model:selectedModel,search:modeSearch,think:modeThink,fast:modeFast,existingSources:followUp?lastSources:null})
+      body:JSON.stringify({messages:apiMessages,model:selectedModel,search:doSearch,think:doThink,fast:doFast,existingSources:existingSrcs,noSearch:noSearch})
     });
     var responseMs = Date.now() - t0;
     removeTyping();
     var data=await res.json();
     if(!res.ok){
-      addBubble('ai',data.error||('Error '+res.status),true,null,null,null);
-      hist.pop();
+      addBubble('ai',data.error||('Error '+res.status),true,null,null,null,null);
+      if (!reloadTurnId) hist.pop();
     } else {
       var sources = data.sources||[];
       if (sources.length) lastSources = sources;
-      var parsed  = extractThinking(data.reply);
-      addBubble('ai', parsed.reply, false, sources, parsed.thinking, responseMs);
-      hist.push({role:'assistant',content:parsed.reply,_sources:sources,_thinking:parsed.thinking,_responseMs:responseMs});
-      var ex=getChat(chatId),t=ex?ex.title:'Chat';
-      upsert(chatId,t,hist,selectedModel);
+      var parsed = extractThinking(data.reply);
+      var version = {reply:parsed.reply, sources:sources, thinking:parsed.thinking, responseMs:responseMs};
+      turnVersions[thisTurnId].push(version);
+      turnCurrentIdx[thisTurnId] = turnVersions[thisTurnId].length - 1;
+      // Build status log
+      lastStatusLog = steps.map(function(s){ return {text:s}; });
+      if (sources.length) lastStatusLog.push({text:'Found '+sources.length+' source'+(sources.length>1?'s':'')});
+      lastStatusLog.push({text:'Response generated in '+formatDuration(responseMs)});
+      var sb2 = document.getElementById('statusBtn'); if (sb2) sb2.style.display='';
+      if (reloadTurnId) {
+        var tdRef = turnData[reloadTurnId];
+        if (tdRef && tdRef.wrap) { renderAiContent(tdRef.wrap, parsed.reply, sources, parsed.thinking, responseMs, reloadTurnId); document.getElementById('msgs').scrollTop=document.getElementById('msgs').scrollHeight; }
+      } else {
+        addBubble('ai', parsed.reply, false, sources, parsed.thinking, responseMs, thisTurnId);
+        hist.push({role:'assistant',content:parsed.reply,_sources:sources,_thinking:parsed.thinking,_responseMs:responseMs});
+        var ex=getChat(chatId),t=ex?ex.title:'Chat';
+        upsert(chatId,t,hist,selectedModel);
+      }
     }
   }catch(err){
     removeTyping();
-    addBubble('ai','Could not reach server.\n\n'+err.message,true,null,null,null);
-    hist.pop();
+    addBubble('ai','Could not reach server.\n\n'+err.message,true,null,null,null,null);
+    if (!reloadTurnId) hist.pop();
   }
   busy=false;
   document.getElementById('hSend').disabled=false;
@@ -823,8 +921,76 @@ async function callAPI(){
   document.getElementById('cInput').focus();
 }
 
+function retryTurn(turnId) { if (!busy) callAPI(turnId); }
+
+function navTurn(turnId, delta) {
+  var versions = turnVersions[turnId]; if (!versions || versions.length < 2) return;
+  var idx = turnCurrentIdx[turnId] || 0;
+  var newIdx = Math.max(0, Math.min(versions.length - 1, idx + delta));
+  if (newIdx === idx) return;
+  turnCurrentIdx[turnId] = newIdx;
+  var td = turnData[turnId]; if (!td || !td.wrap) return;
+  var v = versions[newIdx];
+  renderAiContent(td.wrap, v.reply, v.sources, v.thinking, v.responseMs, turnId);
+}
+
+function toggleStatusPanel(e) {
+  if (e) e.stopPropagation();
+  var panel = document.getElementById('statusPanel');
+  var isOpen = panel.classList.contains('open');
+  if (!isOpen) {
+    var html = '<div class="status-panel-title">Last response activity</div>';
+    lastStatusLog.forEach(function(s){ html += '<div class="status-step-row"><i class="ti ti-check"></i>'+esc(s.text)+'</div>'; });
+    panel.innerHTML = html;
+  }
+  panel.classList.toggle('open', !isOpen);
+}
+document.addEventListener('click', function(e){
+  var panel = document.getElementById('statusPanel'), btn = document.getElementById('statusBtn');
+  if (panel && panel.classList.contains('open') && !panel.contains(e.target) && btn && e.target !== btn && !btn.contains(e.target)) panel.classList.remove('open');
+});
+
+// ── Render AI message content (shared by addBubble and retryTurn) ──
+function renderAiContent(wrapDiv, reply, sources, thinking, responseMs, turnId) {
+  wrapDiv.innerHTML = '';
+  if (thinking) { wrapDiv.appendChild(buildThinkingBox(thinking, responseMs)); }
+  var bDiv = document.createElement('div'); bDiv.className = 'bubble';
+  bDiv.appendChild(renderMd(reply)); wrapDiv.appendChild(bDiv);
+  if (sources && sources.length) { var sb = buildSourcesBubble(sources); if (sb) wrapDiv.appendChild(sb); }
+  if (responseMs != null) {
+    var rt = document.createElement('div'); rt.className = 'resp-time';
+    rt.textContent = 'Responded in ' + formatDuration(responseMs); wrapDiv.appendChild(rt);
+  }
+  if (turnId) {
+    var actDiv = document.createElement('div'); actDiv.className = 'resp-actions';
+    // Nav group (hidden until multiple versions)
+    var navGrp = document.createElement('div'); navGrp.className = 'resp-nav-group';
+    var versions = turnVersions[turnId] || [];
+    if (versions.length > 1) navGrp.classList.add('visible');
+    var prevBtn = document.createElement('button'); prevBtn.className = 'resp-action-btn'; prevBtn.title = 'Previous response';
+    prevBtn.innerHTML = '<i class="ti ti-chevron-left"></i>';
+    var idx = turnCurrentIdx[turnId] !== undefined ? turnCurrentIdx[turnId] : 0;
+    if (idx === 0) prevBtn.disabled = true;
+    prevBtn.addEventListener('click', function() { navTurn(turnId, -1); });
+    var cntSpan = document.createElement('span'); cntSpan.className = 'resp-nav-count';
+    cntSpan.textContent = (idx + 1) + '/' + versions.length;
+    cntSpan.setAttribute('aria-label', 'Response ' + (idx + 1) + ' of ' + versions.length);
+    var nextBtn = document.createElement('button'); nextBtn.className = 'resp-action-btn'; nextBtn.title = 'Next response';
+    nextBtn.innerHTML = '<i class="ti ti-chevron-right"></i>';
+    if (idx === versions.length - 1) nextBtn.disabled = true;
+    nextBtn.addEventListener('click', function() { navTurn(turnId, 1); });
+    navGrp.appendChild(prevBtn); navGrp.appendChild(cntSpan); navGrp.appendChild(nextBtn);
+    actDiv.appendChild(navGrp);
+    var reloadBtn = document.createElement('button'); reloadBtn.className = 'resp-action-btn'; reloadBtn.title = 'Retry response';
+    reloadBtn.innerHTML = '<i class="ti ti-refresh"></i>';
+    reloadBtn.addEventListener('click', function() { retryTurn(turnId); });
+    actDiv.appendChild(reloadBtn);
+    wrapDiv.appendChild(actDiv);
+  }
+}
+
 // ── DOM helpers ──
-function addBubble(role, text, isErr, sources, thinking, responseMs) {
+function addBubble(role, text, isErr, sources, thinking, responseMs, turnId) {
   var wrap=document.getElementById('msgs');
   var row=document.createElement('div'); row.className='message '+role;
   var avDiv=document.createElement('div'); avDiv.className='avatar '+role;
@@ -833,31 +999,8 @@ function addBubble(role, text, isErr, sources, thinking, responseMs) {
 
   if(role==='ai'&&!isErr){
     var wrapDiv=document.createElement('div'); wrapDiv.className='ai-msg-wrap';
-
-    // Thinking box (above response)
-    if(thinking){
-      var tb=buildThinkingBox(thinking, responseMs);
-      wrapDiv.appendChild(tb);
-    }
-
-    // Main response bubble
-    var bDiv=document.createElement('div'); bDiv.className='bubble';
-    bDiv.appendChild(renderMd(text));
-    wrapDiv.appendChild(bDiv);
-
-    // Sources bubble
-    if(sources&&sources.length){
-      var sb=buildSourcesBubble(sources);
-      if(sb) wrapDiv.appendChild(sb);
-    }
-
-    // Response time
-    if(responseMs!=null){
-      var rt=document.createElement('div'); rt.className='resp-time';
-      rt.textContent='Responded in '+formatDuration(responseMs);
-      wrapDiv.appendChild(rt);
-    }
-
+    if (turnId) { wrapDiv.dataset.turnId = turnId; if (turnData[turnId]) turnData[turnId].wrap = wrapDiv; }
+    renderAiContent(wrapDiv, text, sources, thinking, responseMs, turnId);
     row.appendChild(wrapDiv);
   } else {
     var bDiv2=document.createElement('div');
